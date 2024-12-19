@@ -1,16 +1,12 @@
-# This is a sample Python script.
+# Markov Music Py project by Zoltán Simon 2024/25
 
-# Press Shift+F10 to execute it or replace it with your code.
-# Press Double Shift to search everywhere for classes, files, tool windows, actions, and settings.
+import markov_music.markov_model as markov_model
+import markov_music.midi_layer as midi_layer
 
+def main():
+    print('Hi, Markov Music!')
+    midi = midi_layer.MidiLayer("resources/midi/Boci boci tarka.mid")
+    model = markov_model.MarkovModel()
 
-def print_hi(name):
-    # Use a breakpoint in the code line below to debug your script.
-    print(f'Hi, {name}')  # Press Ctrl+F8 to toggle the breakpoint.
-
-
-# Press the green button in the gutter to run the script.
 if __name__ == '__main__':
-    print_hi('PyCharm')
-
-# See PyCharm help at https://www.jetbrains.com/help/pycharm/
+    main()
