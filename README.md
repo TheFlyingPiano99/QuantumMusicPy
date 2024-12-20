@@ -1,4 +1,4 @@
-# Markov Music Py
+# Quantum Music Py
 by Zoltán Simon (2024/25)
 
 
