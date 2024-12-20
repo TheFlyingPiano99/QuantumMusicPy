@@ -64,5 +64,18 @@ class QuantumModel:
 
         probs = math_utils.measurement_probabilities(ket_zero, ops)
         print(f"Probabilities: {probs}")
-        print(f"Collapsed state: {math_utils.collapse_state(ket_plus, ops[0])}")
+        print(f"Collapsed state: {math_utils.collapse_state(ket_zero, ops[0])}")
+
+        # Create base:
+        base_states = []
+        N = 720
+        for i in range(N):
+            psi = np.zeros(shape=[1, N], dtype=np.complex128)
+            psi[0][i] = 1j
+            base_states.append(psi)
+        ops = math_utils.create_projectors(base_states)
+        print(f"Measurement system health is {'good' if math_utils.check_measurement_operators(ops) else 'bad'}.")
+
+        probs = math_utils.proj_measurement_probabilities(base_states[0], ops)
+        print(probs)
 

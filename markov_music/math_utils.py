@@ -57,6 +57,26 @@ def hadamard(dtype=np.complex128):
          [one_per_sqrt_2, -one_per_sqrt_2]], dtype=dtype)
 
 
+def create_projectors(base_states):
+    ops = []
+    for state in base_states:
+        ops.append(np.outer(state, adjoint(state)))
+    return ops
+
+def check_measurement_operators(ops) -> bool:
+    sum = np.zeros(shape=ops[0].shape, dtype=ops[0].dtype)
+    for op in ops:
+        sum += op
+    for i in range(sum.shape[0]):
+        for j in range(sum.shape[1]):
+            if i == j:
+                if abs(sum[i][j]) < 0.99 or abs(sum[i][j]) > 1.01:
+                    return False
+            else:
+                if abs(sum[i][j]) > 0.01:
+                    return False
+    return True
+
 def measurement_probabilities(state: np.ndarray, measurement_ops):
     probs = []
     for op in measurement_ops:
@@ -78,8 +98,19 @@ def proj_measurement_probabilities(state: np.ndarray, proj_measurement_ops):
 
 def collapse_state(state: np.ndarray, measurement_op: np.ndarray):
     M_adj_M = np.matmul(adjoint(measurement_op), measurement_op)
-    temp = np.vecmat(state, M_adj_M)
-    p = float(np.matvec(temp, state)[:, 0].real)
+    p = float(np.matvec(np.vecmat(state, M_adj_M), state)[:, 0].real)
     if p == 0:
         raise "Trying to collapse state to zero-probability outcome!"
     return np.matvec(measurement_op, state) / math.sqrt(p)
+
+
+def collapse_state_using_projector(state: np.ndarray, projector: np.ndarray):
+    p = float(np.matvec(np.vecmat(state, projector), state)[:, 0].real)
+    if p == 0:
+        raise "Trying to collapse state to zero-probability outcome!"
+    return np.matvec(projector, state) / math.sqrt(p)
+
+def evolve_state(state: np.ndarray, unitary_op: np.ndarray):
+    return np.matvec(unitary_op, state)
+
+
