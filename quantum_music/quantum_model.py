@@ -2,7 +2,7 @@ import math
 from math import prod
 
 import numpy as np
-import markov_music.math_utils as math_utils
+import quantum_music.math_utils as math_utils
 
 class QuantumModel:
     __matrix: np.ndarray
@@ -75,7 +75,9 @@ class QuantumModel:
             base_states.append(psi)
         ops = math_utils.create_projectors(base_states)
         print(f"Measurement system health is {'good' if math_utils.check_measurement_operators(ops) else 'bad'}.")
+        print("Operators ready.")
 
-        probs = math_utils.proj_measurement_probabilities(base_states[0], ops)
-        print(probs)
+        for i in range(10):
+            probs = math_utils.proj_measurement_probabilities(base_states[0], ops)
+            print(probs)
 

@@ -1,7 +1,7 @@
 # Markov Music Py project by Zoltán Simon 2024/25
 
-import markov_music.quantum_model as quantum_model
-import markov_music.midi_layer as midi_layer
+import quantum_music.quantum_model as quantum_model
+import quantum_music.midi_layer as midi_layer
 
 
 def main():
