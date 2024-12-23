@@ -1,19 +1,13 @@
 import numpy as np
 import math
-
+from tqdm import tqdm
 
 one_per_sqrt_2 = 1 / math.sqrt(2)
 
 # Gram-Schmidt orthonormalization
 def gs_orthonormalization(matrix :np.ndarray):
-    for i in range(0, matrix.shape[0]):
-        sum = np.zeros(shape=[1, matrix.shape[1]], dtype=matrix.dtype)
-        for j in range(0, i):   # Subtracting projected vectors
-            sum += np.linalg.vecdot(matrix[j], matrix[i]) * matrix[j] / np.linalg.norm(matrix[j])
-        matrix[i] = matrix[i] - sum
-    for i in range(matrix.shape[0]):    # Normalisation
-        matrix[i] = matrix[i] / np.linalg.norm(matrix[i])
-    return matrix
+    Q, R = np.linalg.qr(matrix)
+    return Q
 
 
 def adjoint(m: np.ndarray):
@@ -56,13 +50,6 @@ def hadamard(dtype=np.complex128):
         [[one_per_sqrt_2, one_per_sqrt_2],
          [one_per_sqrt_2, -one_per_sqrt_2]], dtype=dtype)
 
-
-def create_projectors(base_states):
-    ops = []
-    for state in base_states:
-        ops.append(np.outer(state, adjoint(state)))
-    return ops
-
 def check_measurement_operators(ops) -> bool:
     sum = np.zeros(shape=ops[0].shape, dtype=ops[0].dtype)
     for op in ops:
@@ -77,6 +64,16 @@ def check_measurement_operators(ops) -> bool:
                     return False
     return True
 
+
+def normalize_probabilities(probs: list[float]) -> list[float]:
+    sum = 0.0
+    for i in range(len(probs)):
+        sum += probs[i]
+    for i in range(len(probs)):
+        probs[i] /= sum
+    return probs
+
+
 def measurement_probabilities(state: np.ndarray, measurement_ops):
     probs = []
     for op in measurement_ops:
@@ -87,9 +84,10 @@ def measurement_probabilities(state: np.ndarray, measurement_ops):
     return probs
 
 
-def proj_measurement_probabilities(state: np.ndarray, proj_measurement_ops):
+def proj_measurement_probabilities(state: np.ndarray, proj_measurement_base):
     probs = []
-    for op in proj_measurement_ops:
+    for base_vec in tqdm(proj_measurement_base):
+        op = np.outer(base_vec, adjoint(base_vec))
         temp = np.vecmat(state, op)
         p = float(np.matvec(temp, state)[:, 0].real)
         probs.append(p)
