@@ -27,10 +27,10 @@ def main():
         print(note)
     print('')
 
-    model.build_operator_from_notes(notes)
-    #model.build_scale_operator()
-    model.init_classical_state([model.placeholder_rest(), notes[0]], phase=0)
-    model.init_projective_measurement_operators()
+    #model.build_operator_from_notes(notes)
+    model.build_chromatic_scale_operator()
+    model.init_projective_measurement_base()
+    model.init_state_as_base_state(0)
 
     print('\nGenerating more notes:')
     for i in range(100):
