@@ -23,16 +23,18 @@ class TimeSignature:
 class Note:
     note: int   # C is 0. Steps in halftones
     length_beats: Union[int, float]
+    velocity: int
     is_rest: bool
 
-    def __init__(self, note, length_beats, is_rest: bool = False):
+    def __init__(self, note, length_beats, is_rest: bool = False, velocity: int = 64):
         self.note = note
         self.length_beats = length_beats
         self.is_rest = is_rest
+        self.velocity = velocity
 
     def __str__(self):
         if self.length_beats in note_lengths:
             length = note_lengths[self.length_beats]
         else:
             length = self.length_beats
-        return f'{note_names[self.note % 12]} {length} note' if not self.is_rest else f'{length} rest'
+        return f'{note_names[self.note % 12]}\t{length}\tnote\t\t(velocity: {self.velocity})' if not self.is_rest else f'{length} rest'

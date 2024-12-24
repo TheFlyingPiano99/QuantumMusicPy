@@ -129,11 +129,36 @@ class QuantumModel:
     def init_projective_measurement_operators(self, phase: float = 0.0):
         self.__measurement_base = []
         N = self.state_dimensionality()
-        print('Initialising projective measurement base.')
-        for i in range(N):
-            base_vec = np.zeros(shape=[1, N], dtype=np.complex128)
-            base_vec[0][i] = math.cos(phase) + 1j * math.sin(phase)
-            self.__measurement_base.append(base_vec)
+        print('Initializing projective measurement base.')
+        test_sum = np.zeros(shape=[N, N], dtype=np.complex128)
+        c_value = ((math.cos(phase) + 1j * math.sin(phase))
+                   / math.sqrt(math.pow(used_pitch_count + 1, self.__look_back_steps)))
+        for p in range(used_pitch_count + 1):
+            for l in range(used_length_count):
+                base_vec = np.zeros(shape=[1, N], dtype=np.complex128)
+                is_rest = (p == used_pitch_count)
+                if is_rest:
+                    current_note = music.Note(note=0,
+                                              length_beats=idx2length_dict[l],
+                                              is_rest=True)
+                else:
+                    current_note = music.Note(note=idx2note_dict[p],
+                                              length_beats=idx2length_dict[l],
+                                              is_rest=False)
+                lb_notes = []
+                for s in range(self.__look_back_steps):
+                    lb_notes.append(music.Note(note=0, length_beats=1))
+                    for lbp in range(used_pitch_count + 1): # Look-back pitch
+                        if lbp < used_pitch_count:
+                            lb_notes[s].note = idx2note_dict[lbp]
+                        else:
+                            lb_notes[s].note = 0
+                            lb_notes[s].is_rest = True
+                        idx = self.notes2idx(lb_notes + [current_note])
+                        base_vec[0][idx] = c_value
+                test_sum += np.outer(base_vec, math_utils.adjoint(base_vec))
+                self.__measurement_base.append(base_vec)
+        print(test_sum)
 
     def evolve_state(self, iteration_count: int = 1):
         for i in range(iteration_count):
@@ -149,7 +174,25 @@ class QuantumModel:
                 max_idx = i
         return max_idx
 
-    def measure_state(self, superposition_voices: int = 1, collapse_state: bool = True, fuzzy_measurement: bool = True) -> list[music.Note]:
+    def note2idx_for_current_note(self, note: music.Note):
+        if note.is_rest:
+            note_idx = used_pitch_count
+        else:
+            note_idx = note2idx_dict[note.note % 12]
+        return note_idx + (used_pitch_count + 1) * length2idx_dict[note.length_beats]
+
+    def merge_probabilities(self, probs: list[float]) -> list[float]:
+        result = []
+        for p in range(used_pitch_count + 1):
+            for l in range(used_length_count):
+                result.append(0.0)
+                for s in range(self.__look_back_steps):
+                    for p in range(used_pitch_count + 1):
+                        result[]
+        return result
+
+
+    def measure_state(self, max_velocity: int = 64, superposition_voices: int = 1, collapse_state: bool = True, fuzzy_measurement: bool = True) -> list[music.Note]:
         if (superposition_voices < 1):
             raise ValueError('superposition_voices can not be lower than 1')
         probs = math_utils.proj_measurement_probabilities(state=self.__state,
@@ -164,11 +207,24 @@ class QuantumModel:
 
         superposition_harmony = []
         resulting_probs = math_utils.probability_distribution(self.__state)[0]
+        selected_probs = []
+        prob_sum = 0.0
         for i in range(superposition_voices):
             idx = self._idx_of_max_probability(resulting_probs)
-            p = resulting_probs[idx]
+            p = resulting_probs[idx].copy()
+            prob_sum += p
             resulting_probs[idx] = 0.0
-            superposition_harmony.append(self.idx2notes(idx)[-1])
+            note = self.idx2notes(idx)[-1]
+            superposition_harmony.append(note)
+            selected_probs.append(p)
+        for i in range(superposition_voices):
+            selected_probs[i] /= prob_sum
+        max_prob = 0.0
+        for prob in selected_probs:
+            if prob > max_prob:
+                max_prob = prob
+        for i in range(superposition_voices):
+            superposition_harmony[i].velocity = int(selected_probs[i] / max_prob * max_velocity)
         return superposition_harmony
 
 

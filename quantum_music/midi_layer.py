@@ -76,7 +76,7 @@ class MidiTrack:
             self.append_rest(note.length_beats)
         else:
             midi_note = 60 + note.note
-            self.__track.append(mido.Message('note_on', note=midi_note, velocity=self.__latest_velocity, time=self.__current_rest_length))
+            self.__track.append(mido.Message('note_on', note=midi_note, velocity=note.velocity, time=self.__current_rest_length))
             self.__track.append(mido.Message('note_on', note=midi_note, velocity=0, time=note.length_beats * self.__ticks_per_beat - 1))
             self.__current_rest_length = 1
 
@@ -90,7 +90,7 @@ class MidiTrack:
             if not note.is_rest:
                 is_full_rest = False
                 midi_note = 60 + note.note
-                self.__track.append(mido.Message('note_on', note=midi_note, velocity=self.__latest_velocity, time=self.__current_rest_length))
+                self.__track.append(mido.Message('note_on', note=midi_note, velocity=note.velocity, time=self.__current_rest_length))
                 self.__current_rest_length = 0
         # Append note-ends:
         is_first_end = True

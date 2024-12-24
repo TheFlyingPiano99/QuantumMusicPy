@@ -35,7 +35,7 @@ def main():
     print('\nGenerating more notes:')
     for i in range(100):
         model.evolve_state(1)
-        harmony = model.measure_state(superposition_voices=3, collapse_state=False, fuzzy_measurement=True)
+        harmony = model.measure_state(max_velocity=80, superposition_voices=4, collapse_state=False, fuzzy_measurement=True)
         print('')
         for note in harmony:
             print(note)
