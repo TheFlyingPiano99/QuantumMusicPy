@@ -86,13 +86,15 @@ def measurement_probabilities(state: np.ndarray, measurement_ops):
 
 def proj_measurement_probabilities(state: np.ndarray, proj_measurement_base):
     probs = []
-    for base_vec in tqdm(proj_measurement_base):
+    for base_vec in proj_measurement_base:
         op = np.outer(base_vec, adjoint(base_vec))
         temp = np.vecmat(state, op)
         p = float(np.matvec(temp, state)[:, 0].real)
         probs.append(p)
     return probs
 
+def probability_distribution(state: np.ndarray):
+    return np.real(np.multiply(adjoint(state), state))
 
 def collapse_state(state: np.ndarray, measurement_op: np.ndarray):
     M_adj_M = np.matmul(adjoint(measurement_op), measurement_op)
@@ -102,11 +104,12 @@ def collapse_state(state: np.ndarray, measurement_op: np.ndarray):
     return np.matvec(measurement_op, state) / math.sqrt(p)
 
 
-def collapse_state_using_projector(state: np.ndarray, projector: np.ndarray):
-    p = float(np.matvec(np.vecmat(state, projector), state)[:, 0].real)
+def collapse_state_using_projector(state: np.ndarray, base_vec: np.ndarray):
+    projector_op = np.outer(base_vec, adjoint(base_vec))
+    p = float(np.matvec(np.vecmat(state, projector_op), state)[:, 0].real)
     if p == 0:
         raise "Trying to collapse state to zero-probability outcome!"
-    return np.matvec(projector, state) / math.sqrt(p)
+    return np.matvec(projector_op, state) / math.sqrt(p)
 
 def evolve_state(state: np.ndarray, unitary_op: np.ndarray):
     return np.matvec(unitary_op, state)

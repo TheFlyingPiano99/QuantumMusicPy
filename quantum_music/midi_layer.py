@@ -80,6 +80,29 @@ class MidiTrack:
             self.__track.append(mido.Message('note_on', note=midi_note, velocity=0, time=note.length_beats * self.__ticks_per_beat - 1))
             self.__current_rest_length = 1
 
+    def append_harmony(self, harmony: list[music.Note]):
+        is_full_rest = True
+        longest_length = 0
+        # Append note-starts:
+        for note in harmony:
+            if longest_length < note.length_beats:
+                longest_length = note.length_beats
+            if not note.is_rest:
+                is_full_rest = False
+                midi_note = 60 + note.note
+                self.__track.append(mido.Message('note_on', note=midi_note, velocity=self.__latest_velocity, time=self.__current_rest_length))
+                self.__current_rest_length = 0
+        # Append note-ends:
+        is_first_end = True
+        for note in harmony:
+            if not note.is_rest:
+                midi_note = 60 + note.note
+                self.__track.append(mido.Message('note_on', note=midi_note, velocity=0, time=(longest_length * self.__ticks_per_beat - 1) if is_first_end else 0))
+                is_first_end = False
+                self.__current_rest_length = 1
+        if is_full_rest:
+            self.append_rest(longest_length)
+
     def append_tempo_change(self, new_tempo_bpm: int):
         self.__track.append(mido.MetaMessage('set_tempo', tempo=mido.bpm2tempo(new_tempo_bpm)))
 
