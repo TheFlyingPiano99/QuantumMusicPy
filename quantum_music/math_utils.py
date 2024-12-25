@@ -14,7 +14,7 @@ def adjoint(m: np.ndarray):
     return np.transpose(np.conjugate(m))
 
 def abs_squared(psi: np.ndarray):
-    return float(np.vecdot(psi, psi)[:, 0].real)
+    return float(np.vecdot(psi, psi).real)
 
 
 def normalize_state(psi: np.ndarray):

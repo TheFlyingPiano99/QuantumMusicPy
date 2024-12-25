@@ -27,15 +27,17 @@ def main():
         print(note)
     print('')
 
-    #model.build_operator_from_notes(notes)
-    model.build_chromatic_scale_operator()
-    model.init_projective_measurement_base()
+    model.build_operator_from_notes(notes)
+    #model.build_descending_chromatic_scale_operator()
+    model.init_measurement_base()
     model.init_state_as_base_state(0)
+    model.test_indexing()
+    model.test_measurement_base()
 
     print('\nGenerating more notes:')
     for i in range(100):
         model.evolve_state(1)
-        harmony = model.measure_state(max_velocity=80, superposition_voices=4, collapse_state=False, fuzzy_measurement=True)
+        harmony = model.measure_state(max_velocity=80, superposition_voices=4, collapse_state=True, fuzzy_measurement=True)
         print('')
         for note in harmony:
             print(note)

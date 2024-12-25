@@ -38,18 +38,17 @@ class QuantumModel:
 
     def notes2idx(self, notes: list[music.Note]) -> int:
         idx = 0
-        notes.reverse() # The current note is the innermost grouping in the matrices (Current-Note-Pitch-Major Order)
         if self.__look_back_note_length:
             for step, note in enumerate(notes):
                 idx += ((
                             (used_pitch_count if note.is_rest else note2idx_dict[note.note % 12])
                             + (used_pitch_count + 1) * length2idx_dict[note.length_beats]   # Length for each note
-                        ) * int(math.pow((used_pitch_count + 1) * used_length_count, step)))
+                        ) * int(math.pow((used_pitch_count + 1) * used_length_count, self.__look_back_steps - step)))
         else:   # Don't look back at note lengths
             for step, note in enumerate(notes):
                 idx += (
                             (used_pitch_count if note.is_rest else note2idx_dict[note.note % 12])
-                            * int(math.pow(used_pitch_count + 1, step))
+                            * int(math.pow(used_pitch_count + 1, self.__look_back_steps - step))
                 )
             # Only account for the length of the latest note:
             # The current-note-length is the outermost grouping (The values for the same note-length are stored continuously.)
@@ -65,7 +64,7 @@ class QuantumModel:
             length_denominator = int(math.pow(used_pitch_count + 1, self.__look_back_steps + 1))
             length_idx = idx // length_denominator
             idx %= length_denominator   # Peel off the outer grouping to access the inner groupings
-        for step in range(self.__look_back_steps):  # start from the oldest look-back note, which is the outer grouping
+        for step in range(self.__look_back_steps + 1):  # start from the oldest look-back note, which is the outer grouping
             if self.__look_back_note_length:
                 denominator = int(math.pow((used_pitch_count + 1) * used_length_count, self.__look_back_steps - step))
             else:
@@ -74,8 +73,6 @@ class QuantumModel:
             if self.__look_back_note_length:
                 length_idx = note_idx // (used_pitch_count + 1)
                 note_idx %= (used_pitch_count + 1)
-            else:
-                length_idx = 0  # Will be discarded
             idx %= denominator  # Peel off the outer grouping to access the inner groupings
             if used_pitch_count == note_idx:   # The note is a rest
                 notes.append(music.Note(
@@ -109,10 +106,10 @@ class QuantumModel:
 
     def gather_indices_for_current_note(self, note: music.Note) -> list[int]:
         indices = []
-        if note.note < used_pitch_count:
-            current_pitch_offset = note2idx_dict[note.note % 12]
-        else:   # The note is a rest
+        if note.is_rest:
             current_pitch_offset = used_pitch_count
+        else:   # The note is a rest
+            current_pitch_offset = note2idx_dict[note.note % 12]
         current_length_idx = length2idx_dict[note.length_beats]
         if not self.__look_back_note_length:
             length_offset = current_length_idx * int(math.pow((used_pitch_count + 1), self.__look_back_steps + 1))
@@ -145,14 +142,29 @@ class QuantumModel:
             markov_mtx[row_idx][column_idx] += transition_weight
         self.__evolution_operator = math_utils.gs_orthonormalization(markov_mtx).astype(np.complex128)
 
-    def build_chromatic_scale_operator(self):
+    def build_ascending_chromatic_scale_operator(self):
         N = self.state_dimensionality()
         markov_mtx = np.zeros(shape=[N, N], dtype=np.float64)
-        for r in range(N):
-            c = (r + 1) % N
-            markov_mtx[r][c] = 10000.0
+        for c in range(N):
+            r = c + 1                                               # Transition to the next chromatic note
+            if c > 0 and (c + 1) % (used_pitch_count + 1) == 0:     # Transition from rest to C of the same length
+                r -= used_pitch_count + 1
+            elif c > 0 and (c + 2) % (used_pitch_count + 1) == 0:   # Transition from B to C of the same length
+                r -= used_pitch_count
+            markov_mtx[r][c] = 1.0
         self.__evolution_operator = math_utils.gs_orthonormalization(markov_mtx).astype(np.complex128)
 
+    def build_descending_chromatic_scale_operator(self):
+        N = self.state_dimensionality()
+        markov_mtx = np.zeros(shape=[N, N], dtype=np.float64)
+        for c in range(N):
+            r = c - 1                                           # Transition to the chromatic note below
+            if c > 0 and (c + 1) % (used_pitch_count + 1) == 0:     # Transition from rest to C of the same length
+                r -= used_pitch_count + 1
+            elif c % (used_pitch_count + 1) == 0:               # Transition from C to B of the same length
+                r += used_pitch_count
+            markov_mtx[r][c] = 1.0
+        self.__evolution_operator = math_utils.gs_orthonormalization(markov_mtx).astype(np.complex128)
 
     def placeholder_rest(self):
         return music.Note(0, 1, is_rest=True)
@@ -167,35 +179,23 @@ class QuantumModel:
     def init_state_as_base_state(self, base_vec_index: int = 0):
         self.__state = self.__measurement_base[base_vec_index]
 
-    def init_projective_measurement_base(self, phase: float = 0.0):
+    def init_measurement_base(self, phase: float = 0.0):
         self.__measurement_base = []
         N = self.state_dimensionality()
         print('Initializing projective measurement base.')
-        test_sum = np.zeros(shape=[N, N], dtype=np.complex128)
         c_value = math.cos(phase) + 1j * math.sin(phase)
         if self.__look_back_note_length:
             c_value /= math.sqrt(math.pow((used_pitch_count + 1) * used_length_count, self.__look_back_steps))
         else:
             c_value /= math.sqrt(math.pow(used_pitch_count + 1, self.__look_back_steps))
 
-        for p in range(used_pitch_count + 1):
-            for l in range(used_length_count):
-                base_vec = np.zeros(shape=[1, N], dtype=np.complex128)
-                is_rest = (p == used_pitch_count)
-                if is_rest:
-                    current_note = music.Note(note=0,
-                                              length_beats=idx2length_dict[l],
-                                              is_rest=True)
-                else:
-                    current_note = music.Note(note=idx2note_dict[p],
-                                              length_beats=idx2length_dict[l],
-                                              is_rest=False)
-                indices = self.gather_indices_for_current_note(current_note)
-                for idx in indices:
-                    base_vec[0][idx] = c_value
-                test_sum += np.outer(base_vec, math_utils.adjoint(base_vec))
-                self.__measurement_base.append(base_vec)
-        print(test_sum)
+        for current_note_idx in range((used_pitch_count + 1) * used_length_count):
+            current_note = self.idx2current_note_in_integrated(current_note_idx)
+            indices = self.gather_indices_for_current_note(current_note)
+            base_vec = np.zeros(shape=[1, N], dtype=np.complex128)
+            for idx in indices:
+                base_vec[0][idx] = c_value
+            self.__measurement_base.append(base_vec)
 
     def evolve_state(self, iteration_count: int = 1):
         for i in range(iteration_count):
@@ -256,22 +256,61 @@ class QuantumModel:
         superposition_harmony = []
         selected_probs = []
         selected_prob_sum = 0.0
+        selected_pitches = set()
+        non_zero_prob_voice_count = 0
         for i in range(superposition_voices):
             idx = self._idx_of_max_probability(measurement_probs)
             p = measurement_probs[idx]
-            selected_prob_sum += p
-            measurement_probs[idx] = 0.0    # Avoid multiple selection of the same note
+            if 0.0 == p:    # Don't add notes with zero probability
+                continue
             note = self.idx2current_note_in_integrated(idx)
+            measurement_probs[idx] = 0.0    # Avoid multiple selection of the same note
+            if note.note in selected_pitches:   # Skip note if note with the same pitch (different length) is already selected
+                continue
+            selected_prob_sum += p
             superposition_harmony.append(note)
             selected_probs.append(p)
-        for i in range(superposition_voices):
-            selected_probs[i] /= selected_prob_sum
+            selected_pitches.add(note.note)
+        for p in selected_probs:
+            p /= selected_prob_sum
         max_prob = 0.0
-        for prob in selected_probs:
-            if prob > max_prob:
-                max_prob = prob
-        for i in range(superposition_voices):
-            superposition_harmony[i].velocity = int(selected_probs[i] / max_prob * max_velocity)
+        for p in selected_probs:
+            if p > max_prob:
+                max_prob = p
+        for i, p in enumerate(selected_probs):
+            superposition_harmony[i].velocity = int(p / max_prob * max_velocity)
         return superposition_harmony
 
+    def test_indexing(self):
+        print('Testing indexing')
+        for i in range(self.state_dimensionality()):
+            notes = self.idx2notes(i)
+            after_transform = self.notes2idx(notes)
+            print(f'{i} -> {after_transform}:')
+            for note in notes:
+                print(note)
 
+        print('\nTest index gathering')
+        for i in range((used_pitch_count + 1) * used_length_count):
+            current_note = self.idx2current_note_in_integrated(i)
+            print(f'Current note: {str(current_note)}')
+            indices = self.gather_indices_for_current_note(current_note)
+            for i in indices:
+                notes = self.idx2notes(i)
+                for note in notes:
+                    print(note)
+                print('')
+
+    def test_measurement_base(self):
+        print('Testing measurement base')
+        N = self.state_dimensionality()
+        print(f'Quantum state dimensionality: {N}, number of base states: {len(self.__measurement_base)}')
+        sum_mtx = np.zeros(shape=[N, N], dtype=np.complex128)
+        for i, vec in enumerate(self.__measurement_base):
+            print(f'Base vector #{i} has dimensions {vec.shape}')
+            print(f'Absolute value squared = {math_utils.abs_squared(vec)}')
+            print('')
+            sum_mtx += np.outer(vec, math_utils.adjoint(vec))
+        print('Sum of all measurement operator matrices:')
+        print(sum_mtx.shape)
+        print(sum_mtx)
