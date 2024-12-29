@@ -2,6 +2,7 @@ import mido     # Source: https://mido.readthedocs.io/en/stable/index.html
 import pathlib
 import time
 import quantum_music.music_layer as music
+from threading import Thread
 
 
 class MidiTrack:
@@ -11,16 +12,18 @@ class MidiTrack:
     __track: mido.MidiTrack
     __time_signature: music.TimeSignature
     __current_rest_length: int
+    __next_note_index: int
 
-    def __init__(self, file_path: pathlib.Path = pathlib.Path(""), track_idx=0):
+    def __init__(self, file_path: pathlib.Path = None, track_idx=0):
         self.__ticks_per_beat = 480
         self.__latest_tempo_bpm = 120
         self.__latest_velocity = 64
         self.__current_rest_length = 0
+        self.__next_note_index = 0
         self.__time_signature = music.TimeSignature()
         self.__time_signature_msg: mido.MetaMessage
 
-        if file_path == "": # No input file specified: creating empty track
+        if file_path is None:   # No input file specified: creating empty track
             self.__track = mido.MidiTrack()
             self.__time_signature_msg = mido.MetaMessage('time_signature',
                                                  numerator=self.__time_signature.numerator,
@@ -76,32 +79,54 @@ class MidiTrack:
             self.append_rest(note.length_beats)
         else:
             midi_note = 60 + note.note
-            self.__track.append(mido.Message('note_on', note=midi_note, velocity=note.velocity, time=self.__current_rest_length))
-            self.__track.append(mido.Message('note_on', note=midi_note, velocity=0, time=note.length_beats * self.__ticks_per_beat - 1))
+            self.__track.append(mido.Message(
+                type='note_on',
+                note=midi_note,
+                velocity=int(note.velocity),
+                time=int(self.__current_rest_length)
+            ))
+            self.__track.append(mido.Message(
+                type='note_on',
+                note=midi_note,
+                velocity=0,
+                time=int(note.length_beats * self.__ticks_per_beat - 1)
+            ))
             self.__current_rest_length = 1
 
     def append_harmony(self, harmony: list[music.Note]):
         is_full_rest = True
-        longest_length = 0
+        loudest_length = 0
+        loudest_velocity = 0
         # Append note-starts:
         for note in harmony:
-            if longest_length < note.length_beats:
-                longest_length = note.length_beats
+            if note.velocity > loudest_velocity:
+                loudest_velocity = note.velocity
+                loudest_length = note.length_beats
             if not note.is_rest:
                 is_full_rest = False
                 midi_note = 60 + note.note
-                self.__track.append(mido.Message('note_on', note=midi_note, velocity=note.velocity, time=self.__current_rest_length))
+                self.__track.append(mido.Message(
+                    type='note_on',
+                    note=midi_note,
+                    velocity=note.velocity,
+                    time=int(self.__current_rest_length)
+                ))
                 self.__current_rest_length = 0
         # Append note-ends:
         is_first_end = True
         for note in harmony:
             if not note.is_rest:
                 midi_note = 60 + note.note
-                self.__track.append(mido.Message('note_on', note=midi_note, velocity=0, time=(longest_length * self.__ticks_per_beat - 1) if is_first_end else 0))
+                self.__track.append(mido.Message(
+                    type='note_on',
+                    note=midi_note,
+                    velocity=0,
+                    time=int(loudest_length * self.__ticks_per_beat - 1) if is_first_end else 0
+                ))
                 is_first_end = False
                 self.__current_rest_length = 1
         if is_full_rest:
-            self.append_rest(longest_length)
+            self.append_rest(loudest_length)
 
     def append_tempo_change(self, new_tempo_bpm: int):
         self.__track.append(mido.MetaMessage('set_tempo', tempo=mido.bpm2tempo(new_tempo_bpm)))
@@ -114,7 +139,9 @@ class MidiTrack:
         self.__time_signature_msg.numerator = self.__time_signature.numerator
         self.__time_signature_msg.denominator = self.__time_signature.denominator
 
-    def play(self, speed_multiplier = 1):
+    def __play_routine(self, speed_multiplier: float = 1):
+        time.sleep(2)
+        print("\n\nPlayback:")
         outputs = mido.get_output_names()
         print("Available outputs:")
         for output in outputs:
@@ -123,18 +150,44 @@ class MidiTrack:
         output = mido.open_output(outputs[0])
         clocks_per_click = 24
         tempo_bpm = 120
+        note_index = 0
+        arrived_to_start = False
         for msg in self.__track:
             if not type(msg) == mido.MetaMessage:
-                time.sleep(msg.time / self.__ticks_per_beat / tempo_bpm * 60 / speed_multiplier)
+                if msg.type == 'note_on' and msg.velocity > 0:  # This condition is used to control next_note_index
+                    note_index += 1
+                    if note_index < self.__next_note_index:     # Skip note playing if not at the next_note_index
+                        continue
+                    else:
+                        arrived_to_start = True
+                        self.__next_note_index += 1
+                if arrived_to_start:    # Only sleep if already playing notes
+                    time.sleep(msg.time / self.__ticks_per_beat / tempo_bpm * 60 / speed_multiplier)
                 output.send(msg)
             elif msg.type == 'set_tempo':
                 tempo_bpm = mido.tempo2bpm(msg.tempo)
             elif msg.type == 'time_signature':
                 clocks_per_click = msg.clocks_per_click
+        self.__next_note_index = 0  # Reset index
         output.close()
+        print('Finished playback.')
 
+
+    def play(self, speed_multiplier: float = 1):
+        thread = Thread(target=self.__play_routine, args=(speed_multiplier, ))
+        thread.start()
+        return thread
     def save(self, file_path: pathlib.Path):
         file = mido.MidiFile()
         file.ticks_per_beat = self.__ticks_per_beat
         file.tracks.append(self.__track)
         file.save(file_path)
+
+
+    def get_next_note_index(self):
+        return self.__next_note_index
+
+    def set_next_note_index(self, value):
+        self.__next_note_index = value
+
+    next_note_index = property(get_next_note_index, set_next_note_index)

@@ -1,4 +1,5 @@
 numpy
+cupy
 mido
 python-rtmidi
 tqdm
