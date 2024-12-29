@@ -13,6 +13,9 @@ def gs_orthonormalization(matrix :cp.ndarray):
 def adjoint(m: cp.ndarray):
     return cp.transpose(cp.conjugate(m))
 
+def outer(a: cp.ndarray, b: cp.ndarray):
+    return cp.outer(a.T, adjoint(b).T)
+
 def abs_squared(psi: cp.ndarray):
     return float(cp.dot(psi, adjoint(psi))[0, 0].real)
 
@@ -97,6 +100,18 @@ def proj_measurement_probabilities(state: cp.ndarray, proj_measurement_base: lis
         probs[i] /= sum
     return probs
 
+def mixed_state_measurement_probabilities(density_matrix: cp.ndarray, proj_measurement_base: list[cp.ndarray]):
+    probs = list[float]()
+    sum = 0.0
+    for base_vec in proj_measurement_base:
+        op = cp.outer(base_vec, adjoint(base_vec))
+        p = float(cp.matmul(op, density_matrix).trace().real)
+        sum += p
+        probs.append(p)
+    for i in range(len(probs)):
+        probs[i] /= sum
+    return probs
+
 def probability_distribution(state: cp.ndarray):
     return cp.real(cp.multiply(adjoint(state), state))
 
@@ -109,7 +124,7 @@ def collapse_state(state: cp.ndarray, measurement_op: cp.ndarray):
 
 
 def collapse_state_using_projector(state: cp.ndarray, base_vec: cp.ndarray):
-    projector_op = cp.outer(base_vec, adjoint(base_vec))
+    projector_op = outer(base_vec, base_vec)
     p = float(cp.matmul(cp.matmul(adjoint(state).T, projector_op), state.T).T[:, 0].real)
     if p == 0:
         raise "Trying to collapse state to zero-probability outcome!"

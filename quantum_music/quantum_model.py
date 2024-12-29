@@ -239,6 +239,7 @@ class QuantumModel:
         self.__evolution_operator = markov_mtx
 
     def build_bidirectional_major_scale_operator(self, root_note: int = 0, phase: float = 0.0):
+        print('Building bidirectionala major scale operator.')
         root_note %= 12  # Fix out-of-range values
         degrees = [0, 2, 4, 5, 7, 9, 11]  # scale degrees and rest
         for i in range(7):
@@ -316,20 +317,12 @@ class QuantumModel:
 
     def init_measurement_base(self, phase: float = 0.0):
         self.__measurement_base = []
-        N = self.state_dimensionality()
         print('Initializing projective measurement base.')
         c_value = math.cos(phase) + 1j * math.sin(phase)
-        if self.__look_back_note_length:
-            c_value /= math.sqrt(math.pow((used_pitch_count + 1) * used_length_count, self.__look_back_steps))
-        else:
-            c_value /= math.sqrt(math.pow(used_pitch_count + 1, self.__look_back_steps))
-
-        for current_note_idx in range((used_pitch_count + 1) * used_length_count):
-            current_note = self.idx2current_note_in_integrated(current_note_idx)
-            indices = self.gather_indices_for_current_note(current_note)
-            base_vec = cp.zeros(shape=[1, N], dtype=cp.complex128)
-            for idx in indices:
-                base_vec[0][idx] = c_value
+        base_dim = (used_pitch_count + 1) * used_length_count
+        for idx in range(base_dim):
+            base_vec = cp.zeros(shape=[1, base_dim], dtype=cp.complex128)
+            base_vec[0, idx] = c_value
             self.__measurement_base.append(base_vec)
 
     def evolve_state(self, iteration_count: int = 1):
@@ -348,16 +341,16 @@ class QuantumModel:
 
     def note2idx_in_integrated(self, note: music.Note) -> int:
         if note.is_rest:
-            note_idx = used_pitch_count
+            pitch_idx = used_pitch_count
         else:
-            note_idx = note2idx_dict[note.note % 12]
-        return note_idx + (used_pitch_count + 1) * length2idx_dict[note.length_beats]
+            pitch_idx = note2idx_dict[note.note % 12]
+        return pitch_idx + (used_pitch_count + 1) * length2idx_dict[note.length_beats]
 
-    def idx2current_note_in_integrated(self, idx: int) -> music.Note:
+    def idx2note_in_integrated(self, idx: int) -> music.Note:
         length_idx = idx // (used_pitch_count + 1)
-        note_idx = idx % (used_pitch_count + 1)
-        if note_idx < used_pitch_count:
-            note = music.Note(note=idx2note_dict[note_idx % 12], length_beats=idx2length_dict[length_idx],
+        pitch_idx = idx % (used_pitch_count + 1)
+        if pitch_idx < used_pitch_count:
+            note = music.Note(note=idx2note_dict[pitch_idx % 12], length_beats=idx2length_dict[length_idx],
                               is_rest=False)
         else:
             note = music.Note(note=0, length_beats=idx2length_dict[length_idx], is_rest=True)
@@ -380,8 +373,10 @@ class QuantumModel:
                       fuzzy_measurement: bool = True) -> list[music.Note]:
         if (superposition_voices < 1):
             raise ValueError('superposition_voices can not be lower than 1')
-        measurement_probs = math_utils.proj_measurement_probabilities(state=self.__state,
-                                                                      proj_measurement_base=self.__measurement_base)
+        measurement_probs = math_utils.mixed_state_measurement_probabilities(
+            density_matrix=self.density_matrix_for_current_note(),
+            proj_measurement_base=self.__measurement_base
+        )
         if collapse_state:
             if fuzzy_measurement:  # Pseudo-random generated result with the correct distribution
                 result_state_idx = self.__random_gen.choice(
@@ -402,7 +397,7 @@ class QuantumModel:
             p = measurement_probs[idx]
             if self.__harmony_probability_threshold > p:  # Don't add notes with small probability
                 continue
-            note = self.idx2current_note_in_integrated(idx)
+            note = self.idx2note_in_integrated(idx)
             measurement_probs[idx] = 0.0  # Avoid multiple selection of the same note
             if note.note in selected_pitches:  # Skip note if note with the same pitch (different length) is already selected
                 continue
@@ -432,7 +427,7 @@ class QuantumModel:
 
         print('\nTest index gathering')
         for i in range((used_pitch_count + 1) * used_length_count):
-            current_note = self.idx2current_note_in_integrated(i)
+            current_note = self.idx2note_in_integrated(i)
             print(f'Current note: {str(current_note)}')
             indices = self.gather_indices_for_current_note(current_note)
             for i in indices:
@@ -445,7 +440,7 @@ class QuantumModel:
         print('Testing measurement base')
         N = self.state_dimensionality()
         print(f'Quantum state dimensionality: {N}, number of base states: {len(self.__measurement_base)}')
-        sum_mtx = cp.zeros(shape=[N, N], dtype=cp.complex128)
+        sum_mtx = cp.zeros(shape=[len(self.__measurement_base), len(self.__measurement_base)], dtype=cp.complex128)
         error_margin = 0.0001
         for i, vec in enumerate(self.__measurement_base):
             print(f'Base vector #{i} has dimensions {vec.shape}')
@@ -453,7 +448,7 @@ class QuantumModel:
             print(f'Absolute value squared = {magnitude}')
             assert abs(magnitude - 1.0) < error_margin
             print('')
-            sum_mtx += cp.outer(vec, math_utils.adjoint(vec))
+            sum_mtx += math_utils.outer(vec, vec)
         print('Sum of all measurement operator matrices:')
         print(sum_mtx.shape)
         print(sum_mtx)
@@ -467,7 +462,7 @@ class QuantumModel:
     def __recursive_sum_density_matrix(self, step: int, offset: int) -> np.ndarray:
         if step == self.__look_back_steps:    # Halting condition
             sub_state = self.__state[:, offset: offset + (used_pitch_count + 1) * used_length_count]
-            return cp.outer(sub_state.T, math_utils.adjoint(sub_state).T)   # Nx1 * 1xN
+            return math_utils.outer(sub_state, sub_state)   # Nx1 * 1xN
         sum = cp.zeros(
             shape=[(used_pitch_count + 1) * used_length_count, (used_pitch_count + 1) * used_length_count],
             dtype=cp.complex128
@@ -483,15 +478,15 @@ class QuantumModel:
                 sum += self.__recursive_sum_density_matrix(step + 1, local_offset)
         return sum
 
-    def calculate_mixed_state_for_current_note(self) -> np.ndarray:
+    def density_matrix_for_current_note(self) -> np.ndarray:
         return self.__recursive_sum_density_matrix(0, 0)
 
     def invert_evolution_opearotor(self):
         self.__evolution_operator = math_utils.adjoint(self.__evolution_operator)
 
     def test_density_matrix(self):
-        print('Testing density matrix for mixed state:')
-        density_matrix = self.calculate_mixed_state_for_current_note()
+        print('Testing density matrix for current note:')
+        density_matrix = self.density_matrix_for_current_note()
         print(density_matrix)
         trace = density_matrix.trace()
         np_dm = cp.asnumpy(density_matrix)

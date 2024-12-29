@@ -23,28 +23,28 @@ def main():
     # midi.append_note(music.Note(0, 4))
     # midi.change_velocity(80)
 
-    start_time = time.time()
-    model = quantum_model.QuantumModel(look_back_steps=1, look_back_note_length=False)
+    model = quantum_model.QuantumModel(look_back_steps=2, look_back_note_length=False)
     notes = midi.collect_notes()
     print('\nNotes of the song:')
     for note in notes:
         print(note)
     print('')
 
-    model.build_operator_from_notes(notes)
+    #model.build_operator_from_notes(notes)
     #model.build_descending_chromatic_scale_operator(phase=math.pi / 8.0)
     #model.build_bidirectional_chromatic_scale_operator()
     model.init_measurement_base()
-    model.init_classical_state([model.placeholder_rest(), music.Note(note=0, length_beats=1)], phase=0.0)
+    model.init_classical_state([music.Note(note=0, length_beats=1.0, is_rest=False)], phase=0.0)
     #model.init_eigen_state(20)
-    #model.build_bidirectional_major_scale_operator(phase=0.0)
-    model.test_indexing()
+    model.build_ascending_major_scale_operator(phase=0.0)
+    #model.test_indexing()
     model.test_measurement_base()
-    model.test_density_matrix()
+    #model.test_density_matrix()
 
     midi.next_note_index = len(notes)   # Skip the playback of the original song
     midi.play(speed_multiplier=2)
     print('\nGenerating more notes:')
+    start_time = time.time()
     for i in range(1000):
         harmony = model.measure_state(
             max_velocity=80,
