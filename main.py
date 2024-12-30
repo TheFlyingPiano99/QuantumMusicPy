@@ -59,6 +59,7 @@ def main():
     #model.test_indexing()
     #model.test_measurement_base()
     #model.test_density_matrix()
+    model.transfer_measurement_base_to_gpu()
 
     midi.next_note_index = len(notes)   # Skip the playback of the original song
     midi.play(speed_multiplier=2)
@@ -73,9 +74,9 @@ def main():
         )
         for note in harmony:
             print(note)
-        #if i % 500 == 0:
-            #print('Invert operator')
-            #model.invert_evolution_opearotor()
+        if i % 500 == 0:
+            print('Invert operator')
+            model.invert_evolution_opearotor()
         midi.append_harmony(harmony)
         print('')
         model.evolve_state(1)

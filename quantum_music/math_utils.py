@@ -1,4 +1,5 @@
 import cupy as cp
+import numpy as np
 import math
 from tqdm import tqdm
 
@@ -99,6 +100,7 @@ def proj_measurement_probabilities(state: cp.ndarray, proj_measurement_base: lis
     for i in range(len(probs)):
         probs[i] /= sum
     return probs
+
 
 def mixed_state_measurement_probabilities(density_matrix: cp.ndarray, proj_measurement_base: list[cp.ndarray]):
     probs = list[float]()

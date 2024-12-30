@@ -337,7 +337,7 @@ class QuantumModel:
         if abs(prob_sum - 1.0) > 1e-10:
             raise RuntimeError(f'Probability sum P = {prob_sum} is not 1')
         N = self.state_dimensionality()
-        self.__state = cp.zeros(shape=[1, N], dtype=cp.complex128)
+        self.__state = np.zeros(shape=[1, N], dtype=cp.complex128)
         for i, superposed in enumerate(superposed_notes):
             if len(superposed) > 1 + self.__look_back_steps:
                 raise RuntimeError('The provided number of notes is greater than the look-back step count + 1')
@@ -345,6 +345,7 @@ class QuantumModel:
                 superposed.insert(0, self.placeholder_rest())
             self.__state[0][self.notes2idx(superposed)] += coefficients[i]
         self.__state /= math.sqrt(len(superposed_notes))
+        self.__state = cp.asarray(self.__state)
 
     def init_eigen_state(self, state_index):
         if state_index < 0 or state_index > self.state_dimensionality():
@@ -367,7 +368,7 @@ class QuantumModel:
         c_value = math.cos(phase) + 1j * math.sin(phase)
         base_dim = (used_pitch_count + 1) * used_length_count
         for idx in range(base_dim):
-            base_vec = cp.zeros(shape=[1, base_dim], dtype=cp.complex128)
+            base_vec = np.zeros(shape=[1, base_dim], dtype=cp.complex128)
             base_vec[0, idx] = c_value
             self.__measurement_base.append(base_vec)
 
@@ -425,6 +426,7 @@ class QuantumModel:
             proj_measurement_base=self.__measurement_base
         )
         if collapse_state:
+            raise RuntimeError('Deprecated implementation of "collapse_state" mode!')
             if fuzzy_measurement:  # Pseudo-random generated result with the correct distribution
                 result_state_idx = self.__random_gen.choice(
                     np.arange(0, len(measurement_probs)),
@@ -540,3 +542,8 @@ class QuantumModel:
         assert abs(trace - 1.0) < 1e-5
         print(f'Trace of the density matrix: {trace}')
         print(f'Trace of the density matrix^2: {cp.matmul(density_matrix, density_matrix).trace()}')
+
+    def transfer_measurement_base_to_gpu(self):
+        for i in range(len(self.__measurement_base)):
+            self.__measurement_base[i] = cp.asarray(self.__measurement_base[i])
+        cp.cuda.runtime.deviceSynchronize()
