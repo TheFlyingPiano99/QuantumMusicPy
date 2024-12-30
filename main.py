@@ -31,14 +31,14 @@ def main():
     print('')
 
     #model.build_operator_from_notes(notes)
-    #model.build_descending_chromatic_scale_operator(phase=math.pi / 8.0)
+    model.build_descending_chromatic_scale_operator(phase=0.0)
     #model.build_bidirectional_chromatic_scale_operator()
     model.init_measurement_base()
     model.init_classical_state([music.Note(note=0, length_beats=1.0, is_rest=False)], phase=0.0)
     #model.init_eigen_state(20)
-    model.build_ascending_major_scale_operator(phase=0.0)
+    #model.build_ascending_major_scale_operator(phase=0.0)
     #model.test_indexing()
-    model.test_measurement_base()
+    #model.test_measurement_base()
     #model.test_density_matrix()
 
     midi.next_note_index = len(notes)   # Skip the playback of the original song

@@ -6,6 +6,9 @@ import numpy as np
 import quantum_music.math_utils as math_utils
 import quantum_music.music_layer as music
 from tqdm import tqdm
+from pathlib import Path
+import quantum_music.cuda_utils as cuda_utils
+import os
 
 note2idx_dict = {0: 0, 1: 1, 2: 2, 3: 3, 4: 4, 5: 5, 6: 6, 7: 7, 8: 8, 9: 9, 10: 10, 11: 11}  # Maps notes to indexes
 length2idx_dict = {0.5: 0, 1: 1, 2: 2, 4: 3}  # Maps note lengths to indexes
@@ -23,6 +26,8 @@ class QuantumModel:
     __look_back_steps: int  # The current state is product state of the current and previous notes
     __look_back_note_length: bool
     __harmony_probability_threshold: float
+    __ascending_chromatic_operator_kernel: cuda_utils.KernelWithSize
+    __descending_chromatic_operator_kernel: cuda_utils.KernelWithSize
 
     def __init__(self, look_back_steps: int = 0, look_back_note_length: bool = False):
         self.__random_gen = np.random.default_rng()
@@ -148,31 +153,61 @@ class QuantumModel:
 
     def build_ascending_chromatic_scale_operator(self, phase: float = 0.0):
         N = self.state_dimensionality()
-        markov_mtx = cp.zeros(shape=[N, N], dtype=cp.complex128)
-        val = math.cos(phase) + 1j * math.sin(phase)
-        for c in range(N):
-            r = c + 1  # Transition to the next chromatic note
-            if c > 0 and (c + 1) % (used_pitch_count + 1) == 0:  # Stay in rest
-                r = c
-            elif c > 0 and (c + 2) % (used_pitch_count + 1) == 0:  # Transition from B to C of the same length
-                r -= used_pitch_count
-            markov_mtx[r][c] = val
-        print(f'Determinant of the operator: {cp.linalg.det(markov_mtx)}')
-        self.__evolution_operator = markov_mtx
+        self.__evolution_operator = cp.zeros(shape=[N, N], dtype=cp.complex128)
+
+        if not hasattr(self, '__ascending_chromatic_operator_kernel'):  # Init CUDA kernel
+            kernel_source = Path("quantum_music/cuda_kernels/ascending_chromatic_operator.cu").read_text()
+            func_name = 'ascending_chromatic_operator'
+            self.__ascending_chromatic_operator_kernel = cuda_utils.KernelWithSize()
+            self.__ascending_chromatic_operator_kernel.kernel = cp.RawModule(
+                code=kernel_source,
+                name_expressions=[func_name],
+                options=("-std=c++20", f"-I{os.path.abspath('quantum_music')}")
+            ).get_function(func_name)
+            (self.__ascending_chromatic_operator_kernel.grid_size,
+             self.__ascending_chromatic_operator_kernel.block_size) = cuda_utils.get_grid_size_block_size(
+                shape=self.__evolution_operator.shape,
+                reduced_thread_count=False
+            )
+
+        self.__ascending_chromatic_operator_kernel.kernel(
+            self.__ascending_chromatic_operator_kernel.grid_size,
+            self.__ascending_chromatic_operator_kernel.block_size,
+            (
+                self.__evolution_operator,
+                cp.float64(phase),
+                cp.uint32(used_pitch_count),
+            )
+        )
 
     def build_descending_chromatic_scale_operator(self, phase: float = 0.0):
         N = self.state_dimensionality()
-        markov_mtx = cp.zeros(shape=[N, N], dtype=cp.complex128)
-        val = math.cos(phase) + 1j * math.sin(phase)
-        for c in range(N):
-            r = c - 1  # Transition to the chromatic note below
-            if c > 0 and (c + 1) % (used_pitch_count + 1) == 0:  # Transition from rest to C of the same length
-                r = c
-            elif c % (used_pitch_count + 1) == 0:  # Transition from C to B of the same length
-                r += used_pitch_count
-            markov_mtx[r][c] = val
-        print(f'Determinant of the operator: {cp.linalg.det(markov_mtx)}')
-        self.__evolution_operator = markov_mtx
+        self.__evolution_operator = cp.zeros(shape=[N, N], dtype=cp.complex128)
+
+        if not hasattr(self, '__descending_chromatic_operator_kernel'):  # Init CUDA kernel
+            kernel_source = Path("quantum_music/cuda_kernels/descending_chromatic_operator.cu").read_text()
+            func_name = 'descending_chromatic_operator'
+            self.__descending_chromatic_operator_kernel = cuda_utils.KernelWithSize()
+            self.__descending_chromatic_operator_kernel.kernel = cp.RawModule(
+                code=kernel_source,
+                name_expressions=[func_name],
+                options=("-std=c++20", f"-I{os.path.abspath('quantum_music')}")
+            ).get_function(func_name)
+            (self.__descending_chromatic_operator_kernel.grid_size,
+             self.__descending_chromatic_operator_kernel.block_size) = cuda_utils.get_grid_size_block_size(
+                shape=self.__evolution_operator.shape,
+                reduced_thread_count=False
+            )
+
+        self.__descending_chromatic_operator_kernel.kernel(
+            self.__descending_chromatic_operator_kernel.grid_size,
+            self.__descending_chromatic_operator_kernel.block_size,
+            (
+                self.__evolution_operator,
+                cp.float64(phase),
+                cp.uint32(used_pitch_count),
+            )
+        )
 
     def build_bidirectional_chromatic_scale_operator(self, phase: float = 0.0):
         N = self.state_dimensionality()
