@@ -9,38 +9,55 @@ extern "C" __global__
 void ascending_chromatic_operator(
     complex<double>* __restrict__ operator_matrix,
     double phase,
-    unsigned int used_pitch_count
+    unsigned int used_pitch_count,
+    unsigned int used_length_count,
+    unsigned int look_back_steps
 )
 {
-/*
-        Original Python code:
-        val = math.cos(phase) + 1j * math.sin(phase)
-        for c in range(N):
-            r = c + 1  # Transition to the next chromatic note
-            if c > 0 and (c + 1) % (used_pitch_count + 1) == 0:  # Stay in rest
-                r = c
-            elif c > 0 and (c + 2) % (used_pitch_count + 1) == 0:  # Transition from B to C of the same length
-                r -= used_pitch_count
-            self.__evolution_operator[r][c] = val
-*/
     const complex<double> val = {cos(phase), sin(phase)};
-    unsigned int idx = get_array_index_2d();
-    uint2 pos = get_matrix_coords_2d();
-    operator_matrix[idx] = {0.0, 0.0};
-    if ((pos.y) % (used_pitch_count + 1) < 11) {    // Transition to the next note
-        if (pos.x == pos.y + 1) {
-            operator_matrix[idx] = val;
-        }
+    unsigned int N = gridDim.x * blockDim.x;
+    int c = blockIdx.x * blockDim.x + threadIdx.x;
+    int current_note_pitch = c % (used_pitch_count + 1);
+    int current_note_length = (c / (used_pitch_count + 1)) % used_length_count;
+
+    if (current_note_pitch == used_pitch_count) {   // It's a rest
+        int r = c;  // Identity transform
+        unsigned int idx = get_array_index(uint2{(unsigned int)r, (unsigned int)c}, uint2{N, N});
+        operator_matrix[idx] = val;
+        return;
     }
-    else if ((pos.y + 2) % (used_pitch_count + 1) == 0) {   // Loop-back from B to C
-        if (pos.x == pos.y - (used_pitch_count - 1)) {
+
+    int offset = 0;
+    for (int i = 0; i < look_back_steps; i++) {
+        int divider = ((int)pow((double)(used_pitch_count + 1), (int)look_back_steps - i) * used_length_count);
+        int prev_note_pitch = (c / divider) % (int)(used_pitch_count + 1);
+        if (prev_note_pitch == used_pitch_count) {  // It's a rest
+            int r = c;  // Identity transform
+            unsigned int idx = get_array_index(uint2{(unsigned int)r, (unsigned int)c}, uint2{N, N});
             operator_matrix[idx] = val;
+            return;
         }
-    }
-    else if ((pos.y + 1) % (used_pitch_count + 1) == 0) {    // Stay on rest
-        if (pos.x == pos.y) {
+        if (current_note_pitch - (int)look_back_steps + i >= 0
+            && prev_note_pitch != current_note_pitch - (int)look_back_steps + i) {
+            int r = c;  // Identity transform
+            unsigned int idx = get_array_index(uint2{(unsigned int)r, (unsigned int)c}, uint2{N, N});
             operator_matrix[idx] = val;
+            return;
         }
+        else if (current_note_pitch - (int)look_back_steps + i < 0
+            && prev_note_pitch != current_note_pitch - (int)look_back_steps + i + (int)used_pitch_count) {
+            int r = c;  // Identity transform
+            unsigned int idx = get_array_index(uint2{(unsigned int)r, (unsigned int)c}, uint2{N, N});
+            operator_matrix[idx] = val;
+            return;
+        }
+
+        offset += ((prev_note_pitch + 1) % used_pitch_count) * divider;
     }
+
+    offset += (current_note_pitch + 1) % used_pitch_count + current_note_length * (used_pitch_count + 1);
+
+    int idx = get_array_index(uint2{(unsigned int)offset, (unsigned int)c}, uint2{N, N});
+    operator_matrix[idx] = val;
 }
 

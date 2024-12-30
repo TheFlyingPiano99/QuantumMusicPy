@@ -21,4 +21,9 @@ __device__ unsigned int get_array_index_2d()
             + pixel.y;
 }
 
+__device__ unsigned int get_array_index(const uint2& pos, const uint2& N)
+{
+    return pos.x * N.y + pos.y;
+}
+
 #endif // COMMON_CU

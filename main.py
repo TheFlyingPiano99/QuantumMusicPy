@@ -31,10 +31,29 @@ def main():
     print('')
 
     #model.build_operator_from_notes(notes)
-    model.build_descending_chromatic_scale_operator(phase=0.0)
+    model.build_bidirectional_chromatic_scale_operator(phase=0.0)
     #model.build_bidirectional_chromatic_scale_operator()
     model.init_measurement_base()
-    model.init_classical_state([music.Note(note=0, length_beats=1.0, is_rest=False)], phase=0.0)
+    print('Init state')
+    model.init_superposition_state(
+        [
+            [
+                music.Note(note=2, length_beats=0.5, is_rest=False),
+                music.Note(note=1, length_beats=0.5, is_rest=False),
+                music.Note(note=0, length_beats=0.5, is_rest=False)
+            ],
+            [
+                music.Note(note=10, length_beats=0.5, is_rest=False),
+                music.Note(note=11, length_beats=0.5, is_rest=False),
+                music.Note(note=0, length_beats=0.5, is_rest=False)
+            ],
+        ],
+        [
+            math.sqrt(5 / 8),
+            math.sqrt(3 / 8),
+        ]
+    )
+
     #model.init_eigen_state(20)
     #model.build_ascending_major_scale_operator(phase=0.0)
     #model.test_indexing()

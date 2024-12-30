@@ -26,8 +26,10 @@ class QuantumModel:
     __look_back_steps: int  # The current state is product state of the current and previous notes
     __look_back_note_length: bool
     __harmony_probability_threshold: float
+    # Optional cached kernels:
     __ascending_chromatic_operator_kernel: cuda_utils.KernelWithSize
     __descending_chromatic_operator_kernel: cuda_utils.KernelWithSize
+    __bidirectional_chromatic_operator_kernel: cuda_utils.KernelWithSize
 
     def __init__(self, look_back_steps: int = 0, look_back_note_length: bool = False):
         self.__random_gen = np.random.default_rng()
@@ -166,7 +168,7 @@ class QuantumModel:
             ).get_function(func_name)
             (self.__ascending_chromatic_operator_kernel.grid_size,
              self.__ascending_chromatic_operator_kernel.block_size) = cuda_utils.get_grid_size_block_size(
-                shape=self.__evolution_operator.shape,
+                shape=[self.state_dimensionality(), 1],
                 reduced_thread_count=False
             )
 
@@ -177,8 +179,13 @@ class QuantumModel:
                 self.__evolution_operator,
                 cp.float64(phase),
                 cp.uint32(used_pitch_count),
+                cp.uint32(used_length_count),
+                cp.uint32(self.__look_back_steps),
             )
         )
+        #det = cp.linalg.det(self.__evolution_operator)
+        #np_op = cp.asnumpy(self.__evolution_operator)
+        #print(det)
 
     def build_descending_chromatic_scale_operator(self, phase: float = 0.0):
         N = self.state_dimensionality()
@@ -195,7 +202,7 @@ class QuantumModel:
             ).get_function(func_name)
             (self.__descending_chromatic_operator_kernel.grid_size,
              self.__descending_chromatic_operator_kernel.block_size) = cuda_utils.get_grid_size_block_size(
-                shape=self.__evolution_operator.shape,
+                shape=[N, 1],
                 reduced_thread_count=False
             )
 
@@ -206,32 +213,20 @@ class QuantumModel:
                 self.__evolution_operator,
                 cp.float64(phase),
                 cp.uint32(used_pitch_count),
+                cp.uint32(used_length_count),
+                cp.uint32(self.__look_back_steps),
             )
         )
+        #det = cp.linalg.det(self.__evolution_operator)
+        #np_op = cp.asnumpy(self.__evolution_operator)
+        #print(det)
 
     def build_bidirectional_chromatic_scale_operator(self, phase: float = 0.0):
-        N = self.state_dimensionality()
-        markov_mtx = cp.zeros(shape=[N, N], dtype=cp.complex128)
-        val_divided = (math.cos(phase) + 1j * math.sin(phase)) * math_utils.one_per_sqrt_2
-        val_unit = math.cos(phase) + 1j * math.sin(phase)
-        for c in range(N):
-            r0 = c - 1  # Transition to the chromatic note below
-            r1 = c + 1  # Transition to the next chromatic note
-            if c > 0 and (c + 1) % (used_pitch_count + 1) == 0:  # Stay in rest of the same length
-                r0 = c
-                r1 = c
-            elif c % (used_pitch_count + 1) == 0:  # Transition from C to B of the same length
-                r0 += used_pitch_count
-            elif c > 0 and (c + 2) % (used_pitch_count + 1) == 0:  # Transition from B to C of the same length
-                r1 -= used_pitch_count
-            if r0 == r1:
-                markov_mtx[r0][c] = val_unit
-            else:
-                markov_mtx[r0][c] = val_divided
-                markov_mtx[r1][c] = val_divided
-        print(f'Determinant before orthonormalization: {cp.linalg.det(markov_mtx)}')
-        self.__evolution_operator = math_utils.gs_orthonormalization(markov_mtx)
-        print(f'Determinant: {cp.linalg.det(self.__evolution_operator)}')
+        self.build_ascending_chromatic_scale_operator(phase)
+        asc_op = self.__evolution_operator.copy()
+        self.build_descending_chromatic_scale_operator(phase)
+        desc_op = self.__evolution_operator
+        self.__evolution_operator = cp.matmul(asc_op, desc_op)
 
     def build_ascending_major_scale_operator(self, root_note: int = 0, phase: float = 0.0):
         root_note %= 12  # Fix out-of-range values
@@ -335,6 +330,22 @@ class QuantumModel:
         self.__state = cp.zeros(shape=[1, N], dtype=cp.complex128)
         self.__state[0][self.notes2idx(notes)] = math.cos(phase) + 1j * math.sin(phase)
 
+    def init_superposition_state(self, superposed_notes: list[list[music.Note]], coefficients: list[complex]):
+        prob_sum = 0.0
+        for a in coefficients:
+            prob_sum += a.conjugate() * a
+        if abs(prob_sum - 1.0) > 1e-10:
+            raise RuntimeError(f'Probability sum P = {prob_sum} is not 1')
+        N = self.state_dimensionality()
+        self.__state = cp.zeros(shape=[1, N], dtype=cp.complex128)
+        for i, superposed in enumerate(superposed_notes):
+            if len(superposed) > 1 + self.__look_back_steps:
+                raise RuntimeError('The provided number of notes is greater than the look-back step count + 1')
+            for j in range(len(superposed) - self.__look_back_steps - 1):   # Add rests
+                superposed.insert(0, self.placeholder_rest())
+            self.__state[0][self.notes2idx(superposed)] += coefficients[i]
+        self.__state /= math.sqrt(len(superposed_notes))
+
     def init_eigen_state(self, state_index):
         if state_index < 0 or state_index > self.state_dimensionality():
             raise ValueError('state_index must be between 0 and state_dimensionality')
@@ -362,6 +373,7 @@ class QuantumModel:
 
     def evolve_state(self, iteration_count: int = 1):
         for i in range(iteration_count):
+            #np_state0 = cp.asnumpy(self.__state)
             self.__state = cp.matmul(self.__evolution_operator, self.__state.T).T
             self.__state /= cp.linalg.norm(self.__state)  # Extra normalization to prevent numeric error build-up
 
