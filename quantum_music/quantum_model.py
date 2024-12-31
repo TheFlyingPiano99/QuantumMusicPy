@@ -31,12 +31,13 @@ class QuantumModel:
     __descending_chromatic_operator_kernel: cuda_utils.KernelWithSize
     __bidirectional_chromatic_operator_kernel: cuda_utils.KernelWithSize
     __hadamard_operator_kernel: cuda_utils.KernelWithSize
+    __fdt_operator_kernel: cuda_utils.KernelWithSize
 
     def __init__(self, look_back_steps: int = 0, look_back_note_length: bool = False):
         self.__random_gen = np.random.default_rng()
         self.__look_back_steps = look_back_steps
         self.__look_back_note_length = look_back_note_length
-        self.__harmony_probability_threshold = 0.05
+        self.__harmony_probability_threshold = 0.001
 
     def state_dimensionality(self):
         return (
@@ -323,6 +324,32 @@ class QuantumModel:
             )
         )
 
+    def build_discrete_fourier_transform_operator(self):
+        N = self.state_dimensionality()
+        self.__evolution_operator = cp.zeros(shape=[N, N], dtype=cp.complex128)
+
+        if not hasattr(self, '__fdt_operator_kernel'):  # Init CUDA kernel
+            kernel_source = Path("quantum_music/cuda_kernels/discrete_fourier_transform_operator.cu").read_text()
+            func_name = 'discrete_fourier_transform_operator'
+            self.__fdt_operator_kernel = cuda_utils.KernelWithSize()
+            self.__fdt_operator_kernel.kernel = cp.RawModule(
+                code=kernel_source,
+                name_expressions=[func_name],
+                options=("-std=c++20", f"-I{os.path.abspath('quantum_music')}")
+            ).get_function(func_name)
+            (self.__fdt_operator_kernel.grid_size,
+             self.__fdt_operator_kernel.block_size) = cuda_utils.get_grid_size_block_size(
+                shape=[N, N],
+                reduced_thread_count=False
+            )
+        self.__fdt_operator_kernel.kernel(
+            self.__fdt_operator_kernel.grid_size,
+            self.__fdt_operator_kernel.block_size,
+            (
+                self.__evolution_operator,
+            )
+        )
+
     def calculate_eigenstate(self):
         eigen_values, eigen_vectors = cp.linalg.eigh(self.__evolution_operator)
         print('Eigenvalues:')
@@ -349,6 +376,8 @@ class QuantumModel:
             prob_sum += a.conjugate() * a
         if abs(prob_sum - 1.0) > 1e-10:
             raise RuntimeError(f'Probability sum P = {prob_sum} is not 1')
+        if len(superposed_notes) != len(coefficients):
+            raise RuntimeError(f'Number of superposed_notes and coefficients is not equal')
         N = self.state_dimensionality()
         self.__state = np.zeros(shape=[1, N], dtype=cp.complex128)
         for i, superposed in enumerate(superposed_notes):

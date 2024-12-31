@@ -3,6 +3,7 @@
 
 #include <cupy/complex.cuh>
 
+constexpr double M_PI = 3.14159265358979323846264338327950288419716939937510;
 
 
 __device__ uint2 get_matrix_coords_2d()
@@ -25,5 +26,11 @@ __device__ unsigned int get_array_index(const uint2& pos, const uint2& N)
 {
     return pos.x * N.y + pos.y;
 }
+
+__device__ complex<double> exp_i(double angle)
+{
+    return complex<double>(cos(angle), sin(angle));
+}
+
 
 #endif // COMMON_CU

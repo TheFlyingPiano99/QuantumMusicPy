@@ -1,4 +1,5 @@
 # Markov Music Py project by Zoltán Simon 2024/25
+import pathlib
 
 import quantum_music.quantum_model as quantum_model
 import quantum_music.midi_layer as midi_layer
@@ -31,11 +32,14 @@ def main():
     print('')
 
     #model.build_operator_from_notes(notes)
-    model.build_bidirectional_chromatic_scale_operator(phase=0.0)
+    #model.build_bidirectional_chromatic_scale_operator(phase=0.0)
+    model.build_discrete_fourier_transform_operator()
     #model.build_hadamard_operator()
     #model.build_bidirectional_chromatic_scale_operator()
     model.init_measurement_base()
     print('Init state')
+    phase = 0.0
+
     model.init_superposition_state(
         [
             [
@@ -43,18 +47,17 @@ def main():
                 music.Note(note=1, length_beats=0.5, is_rest=False),
                 music.Note(note=0, length_beats=0.5, is_rest=False)
             ],
-            [
-                #music.Note(note=10, length_beats=0.5, is_rest=False),
-                music.Note(note=11, length_beats=0.5, is_rest=False),
-                music.Note(note=0, length_beats=0.5, is_rest=False)
-            ],
+            #[
+            #    #music.Note(note=10, length_beats=0.5, is_rest=False),
+            #    music.Note(note=11, length_beats=0.5, is_rest=False),
+            #    music.Note(note=7, length_beats=0.5, is_rest=False)
+            #],
         ],
         [
-            math.sqrt(5 / 8),
-            math.sqrt(3 / 8),
+            math.sqrt(8 / 8) * (math.cos(phase) + 1j * math.sin(phase)),
+            #math.sqrt(3 / 8) * (math.cos(phase * 2) + 1j * math.sin(phase * 2)),
         ]
     )
-
     #model.init_eigen_state(20)
     #model.build_ascending_major_scale_operator(phase=0.0)
     #model.test_indexing()
@@ -75,16 +78,18 @@ def main():
         )
         for note in harmony:
             print(note)
-        if i % (11 * 4) == 0:
-            print('Invert operator')
-            model.invert_evolution_opearotor()
+        #if i % (11 * 4) == 0:
+            #print('Invert operator')
+            #model.invert_evolution_opearotor()
         midi.append_harmony(harmony)
         print('')
         model.evolve_state(1)
     end_time = time.time()
     duration = end_time - start_time
     print(f'Calculation took {duration} seconds.')
-    midi.save("resources/midi/generated chromatic scale.mid")
+    file_name = 'fourier experiment.mid'
+    print(f'Saving to file: {file_name}')
+    midi.save(pathlib.Path("resources/midi/" + file_name))
 
 
 if __name__ == '__main__':
