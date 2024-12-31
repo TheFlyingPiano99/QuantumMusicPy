@@ -9,8 +9,8 @@ import time
 
 def main():
     print('Hi, Markov Music!')
-    midi = midi_layer.MidiTrack("resources/midi/Boci boci tarka.mid")
-    #midi = midi_layer.MidiTrack()
+    #midi = midi_layer.MidiTrack("resources/midi/Boci boci tarka.mid")
+    midi = midi_layer.MidiTrack()
 
     # midi.append_tempo_change(120)
     # midi.change_velocity(60)
@@ -23,7 +23,7 @@ def main():
     # midi.append_note(music.Note(0, 4))
     # midi.change_velocity(80)
 
-    model = quantum_model.QuantumModel(look_back_steps=2, look_back_note_length=False)
+    model = quantum_model.QuantumModel(look_back_steps=1, look_back_note_length=False)
     notes = midi.collect_notes()
     print('\nNotes of the song:')
     for note in notes:
@@ -32,18 +32,19 @@ def main():
 
     #model.build_operator_from_notes(notes)
     model.build_bidirectional_chromatic_scale_operator(phase=0.0)
+    #model.build_hadamard_operator()
     #model.build_bidirectional_chromatic_scale_operator()
     model.init_measurement_base()
     print('Init state')
     model.init_superposition_state(
         [
             [
-                music.Note(note=2, length_beats=0.5, is_rest=False),
+                #music.Note(note=2, length_beats=0.5, is_rest=False),
                 music.Note(note=1, length_beats=0.5, is_rest=False),
                 music.Note(note=0, length_beats=0.5, is_rest=False)
             ],
             [
-                music.Note(note=10, length_beats=0.5, is_rest=False),
+                #music.Note(note=10, length_beats=0.5, is_rest=False),
                 music.Note(note=11, length_beats=0.5, is_rest=False),
                 music.Note(note=0, length_beats=0.5, is_rest=False)
             ],
@@ -62,7 +63,7 @@ def main():
     model.transfer_measurement_base_to_gpu()
 
     midi.next_note_index = len(notes)   # Skip the playback of the original song
-    midi.play(speed_multiplier=2)
+    midi.play(speed_multiplier=1)
     print('\nGenerating more notes:')
     start_time = time.time()
     for i in range(1000):
@@ -74,7 +75,7 @@ def main():
         )
         for note in harmony:
             print(note)
-        if i % 500 == 0:
+        if i % (11 * 4) == 0:
             print('Invert operator')
             model.invert_evolution_opearotor()
         midi.append_harmony(harmony)
@@ -83,7 +84,7 @@ def main():
     end_time = time.time()
     duration = end_time - start_time
     print(f'Calculation took {duration} seconds.')
-    midi.save("resources/midi/generated scale.mid")
+    midi.save("resources/midi/generated chromatic scale.mid")
 
 
 if __name__ == '__main__':

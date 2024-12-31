@@ -30,6 +30,7 @@ class QuantumModel:
     __ascending_chromatic_operator_kernel: cuda_utils.KernelWithSize
     __descending_chromatic_operator_kernel: cuda_utils.KernelWithSize
     __bidirectional_chromatic_operator_kernel: cuda_utils.KernelWithSize
+    __hadamard_operator_kernel: cuda_utils.KernelWithSize
 
     def __init__(self, look_back_steps: int = 0, look_back_note_length: bool = False):
         self.__random_gen = np.random.default_rng()
@@ -183,9 +184,6 @@ class QuantumModel:
                 cp.uint32(self.__look_back_steps),
             )
         )
-        #det = cp.linalg.det(self.__evolution_operator)
-        #np_op = cp.asnumpy(self.__evolution_operator)
-        #print(det)
 
     def build_descending_chromatic_scale_operator(self, phase: float = 0.0):
         N = self.state_dimensionality()
@@ -217,9 +215,6 @@ class QuantumModel:
                 cp.uint32(self.__look_back_steps),
             )
         )
-        #det = cp.linalg.det(self.__evolution_operator)
-        #np_op = cp.asnumpy(self.__evolution_operator)
-        #print(det)
 
     def build_bidirectional_chromatic_scale_operator(self, phase: float = 0.0):
         self.build_ascending_chromatic_scale_operator(phase)
@@ -298,17 +293,35 @@ class QuantumModel:
         print(f'Determinant of the operator: {cp.linalg.det(markov_mtx)}')
         self.__evolution_operator = markov_mtx
 
-    def build_self_inverse_operator(self):
-        raise RuntimeError('Unimplemented method!')
+    def build_hadamard_operator(self):
         N = self.state_dimensionality()
-        if N % 2 == 0:  # Even dimensionality (Use Hadamard op.)
-            H1 = cp.matrix([[math_utils.one_per_sqrt_2, math_utils.one_per_sqrt_2],
-                            [math_utils.one_per_sqrt_2, -math_utils.one_per_sqrt_2]], dtype=cp.float64)
-            #TODO
+        if math.log2(N) % 1 > 1e-10:
+            raise RuntimeError('For the Hadamard gate, the dimensionality of the state vector must be a power of 2.')
+        self.__evolution_operator = cp.zeros(shape=[N, N], dtype=cp.complex128)
 
-        else:  # Odd dimensionality (Use Fractional Fourier Transform)
-            pass
-            #TODO
+        if not hasattr(self, '__hadamard_operator_kernel'):  # Init CUDA kernel
+            kernel_source = Path("quantum_music/cuda_kernels/hadamard_operator.cu").read_text()
+            func_name = 'hadamard_operator'
+            self.__hadamard_operator_kernel = cuda_utils.KernelWithSize()
+            self.__hadamard_operator_kernel.kernel = cp.RawModule(
+                code=kernel_source,
+                name_expressions=[func_name],
+                options=("-std=c++20", f"-I{os.path.abspath('quantum_music')}")
+            ).get_function(func_name)
+            (self.__hadamard_operator_kernel.grid_size,
+             self.__hadamard_operator_kernel.block_size) = cuda_utils.get_grid_size_block_size(
+                shape=[N, N],
+                reduced_thread_count=False
+            )
+        n = math.log2(N)    # Supposed number of qubits
+        self.__hadamard_operator_kernel.kernel(
+            self.__hadamard_operator_kernel.grid_size,
+            self.__hadamard_operator_kernel.block_size,
+            (
+                self.__evolution_operator,
+                cp.int32(n)
+            )
+        )
 
     def calculate_eigenstate(self):
         eigen_values, eigen_vectors = cp.linalg.eigh(self.__evolution_operator)
