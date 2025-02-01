@@ -140,7 +140,7 @@ class MidiTrack:
         self.__time_signature_msg.denominator = self.__time_signature.denominator
 
     def __play_routine(self, speed_multiplier: float = 1):
-        time.sleep(2)
+        time.sleep(3)
         print("\n\nPlayback:")
         outputs = mido.get_output_names()
         print("Available outputs:")
@@ -169,6 +169,7 @@ class MidiTrack:
             elif msg.type == 'time_signature':
                 clocks_per_click = msg.clocks_per_click
         self.__next_note_index = 0  # Reset index
+        time.sleep(2)
         output.close()
         print('Finished playback.')
 
@@ -177,6 +178,7 @@ class MidiTrack:
         thread = Thread(target=self.__play_routine, args=(speed_multiplier, ))
         thread.start()
         return thread
+
     def save(self, file_path: pathlib.Path):
         file = mido.MidiFile()
         file.ticks_per_beat = self.__ticks_per_beat
