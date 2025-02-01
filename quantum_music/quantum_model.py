@@ -1,4 +1,5 @@
 import math
+import pathlib
 from math import prod
 
 import cupy as cp
@@ -10,8 +11,10 @@ from pathlib import Path
 import quantum_music.cuda_utils as cuda_utils
 import os
 
+from quantum_music import music_layer
+
 note2idx_dict = {0: 0, 1: 1, 2: 2, 3: 3, 4: 4, 5: 5, 6: 6, 7: 7, 8: 8, 9: 9, 10: 10, 11: 11}  # Maps notes to indexes
-length2idx_dict = {0.5: 0, 1: 1, 2: 2, 4: 3}  # Maps note lengths to indexes
+length2idx_dict = {0.5: 0, 1: 1, 1.5: 2, 2: 3, 3: 4, 4: 5}  # Maps note lengths to indexes
 idx2note_dict = {v: k for k, v in note2idx_dict.items()}  # Maps indexes to notes
 idx2length_dict = {v: k for k, v in length2idx_dict.items()}  # Maps indexes to note lengths
 used_pitch_count = len(note2idx_dict)
@@ -126,9 +129,16 @@ class QuantumModel:
 
     def build_operator_from_notes(self, notes: list[music.Note]):
         N = self.state_dimensionality()
-        transition_weight = 10000.0
+        transition_weight = 100.0
+        longest_length = 0.0
+        for i in range(used_length_count):
+            if longest_length < idx2length_dict[i]:
+                longest_length = idx2length_dict[i]
+        for note in notes:
+            if note.length_beats > longest_length:
+                note.length_beats = longest_length
         print(f'Building {N}x{N} dimensional evolution operator.')
-        self.__evolution_operator = cp.zeros(shape=[N, N], dtype=cp.complex128)
+        self.__evolution_operator = cp.identity(N, dtype=cp.complex128)
         index_of_starting_state: int = 0
         for i in tqdm(range(len(notes) - 1)):  # Stop before the last note because the last is not transitioning
             from_notes = []
@@ -459,6 +469,15 @@ class QuantumModel:
                     integrated_probs[merged_idx] += probs[original_idx]
         return integrated_probs
 
+    def entangled_state_from_current_note(self, current_note: music_layer.Note) -> cp.ndarray:
+        N = self.state_dimensionality()
+        state = cp.zeros(shape=[1, N], dtype=cp.complex128)
+        indices = self.gather_indices_for_current_note(current_note)
+        val = 1.0 / math.sqrt(len(indices))
+        for idx in indices:
+            state[0, idx] = val
+        return state
+
     def measure_state(self, max_velocity: int = 64, superposition_voices: int = 1, collapse_state: bool = True,
                       fuzzy_measurement: bool = True) -> list[music.Note]:
         if (superposition_voices < 1):
@@ -468,15 +487,14 @@ class QuantumModel:
             proj_measurement_base=self.__measurement_base
         )
         if collapse_state:
-            raise RuntimeError('Deprecated implementation of "collapse_state" mode!')
             if fuzzy_measurement:  # Pseudo-random generated result with the correct distribution
                 result_state_idx = self.__random_gen.choice(
                     np.arange(0, len(measurement_probs)),
                     p=measurement_probs)
             else:  # Measurement result is the state with the highest probability
                 result_state_idx = self._idx_of_max_probability(measurement_probs)
-            self.__state = math_utils.collapse_state_using_projector(self.__state,
-                                                                     self.__measurement_base[result_state_idx])
+            current_note = self.idx2note_in_integrated(result_state_idx)
+            self.__state = self.entangled_state_from_current_note(current_note)
 
         print(measurement_probs)
         superposition_harmony = []
@@ -589,3 +607,14 @@ class QuantumModel:
         for i in range(len(self.__measurement_base)):
             self.__measurement_base[i] = cp.asarray(self.__measurement_base[i])
         cp.cuda.runtime.deviceSynchronize()
+
+    def serialise_evolution_operator(self, file_path: pathlib.Path):
+        np_op = cp.asnumpy(self.__evolution_operator)
+        np.save(file_path.absolute(), np_op)
+        print(f'Serialised evolution operator to file: {file_path.absolute()}')
+
+    def load_evolution_operator(self, file_path: pathlib.Path):
+        np_op = np.load(file_path.absolute())
+        self.__evolution_operator = cp.asarray(np_op)
+        print(f'Loaded evolution operator from file: {file_path.absolute()}')
+        print(f'Shape of the operator is: {self.__evolution_operator.shape}')

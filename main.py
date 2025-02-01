@@ -10,86 +10,67 @@ import time
 
 def main():
     print('Hi, Markov Music!')
-    #midi = midi_layer.MidiTrack("resources/midi/Boci boci tarka.mid")
-    midi = midi_layer.MidiTrack()
+    midi = midi_layer.MidiTrack("resources/midi/Régi stílusú palóc népdalok.mid")
 
-    # midi.append_tempo_change(120)
-    # midi.change_velocity(60)
-    # midi.append_note(music.Note(0, 1))
-    # midi.append_note(music.Note(-1, 1))
-    # midi.append_note(music.Note(0, 1))
-    # midi.append_note(music.Note(-1, 1))
-    # midi.append_rest(4)
-    # midi.change_velocity(40)
-    # midi.append_note(music.Note(0, 4))
-    # midi.change_velocity(80)
-
-    model = quantum_model.QuantumModel(look_back_steps=1, look_back_note_length=False)
+    model = quantum_model.QuantumModel(look_back_steps=2, look_back_note_length=False)
     notes = midi.collect_notes()
     print('\nNotes of the song:')
     for note in notes:
         print(note)
     print('')
 
-    #model.build_operator_from_notes(notes)
-    #model.build_bidirectional_chromatic_scale_operator(phase=0.0)
-    model.build_discrete_fourier_transform_operator()
-    #model.build_hadamard_operator()
-    #model.build_bidirectional_chromatic_scale_operator()
+    model.build_operator_from_notes(notes)
     model.init_measurement_base()
+    model.transfer_measurement_base_to_gpu()
+
     print('Init state')
     phase = 0.0
 
     model.init_superposition_state(
         [
+            #[
+                #music.Note(note=0, length_beats=0.5, is_rest=False),
+                #music.Note(note=10, length_beats=0.5, is_rest=False),
+                #music.Note(note=9, length_beats=0.5, is_rest=False)
+            #],
             [
-                #music.Note(note=2, length_beats=0.5, is_rest=False),
-                music.Note(note=1, length_beats=0.5, is_rest=False),
+                music.Note(note=0, length_beats=0.5, is_rest=False),
+                music.Note(note=0, length_beats=0.5, is_rest=False),
                 music.Note(note=0, length_beats=0.5, is_rest=False)
             ],
-            #[
-            #    #music.Note(note=10, length_beats=0.5, is_rest=False),
-            #    music.Note(note=11, length_beats=0.5, is_rest=False),
-            #    music.Note(note=7, length_beats=0.5, is_rest=False)
-            #],
         ],
         [
-            math.sqrt(8 / 8) * (math.cos(phase) + 1j * math.sin(phase)),
-            #math.sqrt(3 / 8) * (math.cos(phase * 2) + 1j * math.sin(phase * 2)),
+            #math.sqrt(4 / 8) * (math.cos(phase) + 1j * math.sin(phase)),
+            math.sqrt(8 / 8) * (math.cos(phase * 2) + 1j * math.sin(phase * 2)),
         ]
     )
-    #model.init_eigen_state(20)
-    #model.build_ascending_major_scale_operator(phase=0.0)
-    #model.test_indexing()
-    #model.test_measurement_base()
-    #model.test_density_matrix()
-    model.transfer_measurement_base_to_gpu()
+    model.serialise_evolution_operator(pathlib.Path('saves/operators/hungarian_folk_song_op.npy'))
 
     midi.next_note_index = len(notes)   # Skip the playback of the original song
-    midi.play(speed_multiplier=1)
-    print('\nGenerating more notes:')
+    midi.play(speed_multiplier=1)       # Start playback on a different thread
+    print('\nGenerating sequence:')
     start_time = time.time()
-    for i in range(1000):
+    for i in range(500):
         harmony = model.measure_state(
             max_velocity=80,
             superposition_voices=4,
             collapse_state=False,
-            fuzzy_measurement=False
+            fuzzy_measurement=True
         )
         for note in harmony:
             print(note)
-        #if i % (11 * 4) == 0:
-            #print('Invert operator')
-            #model.invert_evolution_opearotor()
+        if i > 0 and i % 250 == 0:
+            print('Invert operator')
+            model.invert_evolution_opearotor()
         midi.append_harmony(harmony)
-        print('')
         model.evolve_state(1)
     end_time = time.time()
     duration = end_time - start_time
     print(f'Calculation took {duration} seconds.')
-    file_name = 'fourier experiment.mid'
+    # Save output:
+    file_name = 'folksong_variations.mid'
     print(f'Saving to file: {file_name}')
-    midi.save(pathlib.Path("resources/midi/" + file_name))
+    midi.save(pathlib.Path("saves/midi/" + file_name))
 
 
 if __name__ == '__main__':
